@@ -99,3 +99,5 @@ class EgoNetSplitter(object):
             * **memberships** *(dictionary of lists)* - Cluster memberships.
         """
         return self.overlapping_partitions
+    def kpjim_ego(self):
+        print("Hello kpjim's ego")
