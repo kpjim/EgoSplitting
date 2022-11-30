@@ -1,5 +1,11 @@
 """Ego-Splitter class"""
 
+# Ignore these.. kpjim wants to use his custom made "community" package
+import sys
+import os
+t = os.getcwd() + "/python-louvain"
+sys.path.insert(0, t)
+
 import community
 import networkx as nx
 from tqdm import tqdm
@@ -18,35 +24,53 @@ class EgoNetSplitter(object):
     def __init__(self, resolution=1.0):
         self.resolution = resolution
 
-    def _create_egonet(self, node):
+    def _create_egonet(self, node, update = 0):
         """
         Creating an ego net, extracting personas and partitioning it.
 
         Args:
             node: Node ID for egonet (ego node).
         """
+        if update != 0:
+            # kpjim: Remove old personalities of node from the persona
+            if node in self.personalities:
+                for p in self.personalities[node]:
+                    self.persona_graph.remove_node(p)
         ego_net_minus_ego = self.graph.subgraph(self.graph.neighbors(node))
         components = {i: n for i, n in enumerate(nx.connected_components(ego_net_minus_ego))}
         new_mapping = {}
         personalities = []
         for k, v in components.items():
             personalities.append(self.index)
+            if update != 0:
+                # kpjim: Update now the personality_map so that we don't have to
+                # iterate it later
+                self.personality_map[self.index] = node
             for other_node in v:
                 new_mapping[other_node] = self.index
             self.index = self.index+1
         self.components[node] = new_mapping
         self.personalities[node] = personalities
 
-    def _create_egonets(self):
+    def _create_egonets(self, R_ego_t = None, update = 0):
         """
-        Creating an egonet for each node.
+        Creating an egonet for each node. kpjim: Use R_ego_t to restrict the
+        egonet recalculations
         """
-        self.components = {}
-        self.personalities = {}
-        self.index = 0
+        """ kpjim:
+        if R_ego_t is not None we have already calculated components,
+        personalities and indexing once and now we are in the process of
+        updating using a batch. So we don't need (actually we NEED NOT TO)
+        initialize them again!
+        """
+        if R_ego_t == None:
+            self.components = {}
+            self.personalities = {}
+            self.index = 0
         print("Creating egonets.")
-        for node in tqdm(self.graph.nodes()):
-            self._create_egonet(node)
+        nodes = R_ego_t if R_ego_t != None else self.graph.nodes()
+        for node in tqdm(nodes):
+            self._create_egonet(node, update)
 
     def _map_personalities(self):
         """
@@ -69,6 +93,17 @@ class EgoNetSplitter(object):
         print("Creating the persona graph.")
         self.persona_graph_edges = [self._get_new_edge_ids(e) for e in tqdm(self.graph.edges())]
         self.persona_graph = nx.from_edgelist(self.persona_graph_edges)
+    
+    def _update_persona_graph(self, Rt):
+        """
+        kpjim: Update the _already created_ persona graph by visiting only the
+        nodes in the Rt set
+        """
+        print("Updating the persona graph.")
+        for n in Rt:
+            for e in self.graph.edges(n):
+                x, y = self._get_new_edge_ids(e)
+                self.persona_graph.add_edge(x, y)
 
     def _create_partitions(self):
         """
@@ -99,5 +134,52 @@ class EgoNetSplitter(object):
             * **memberships** *(dictionary of lists)* - Cluster memberships.
         """
         return self.overlapping_partitions
+
+    def _update(self, R_ego_t):
+        # print("kpjim start")
+        # print(self.personality_map)
+        print("START OF UPDATE")
+        self._create_egonets(R_ego_t = R_ego_t, update = 1)
+        # We have already updated the personality map
+        ## self._map_personalities()
+        ## self._create_persona_graph()
+        self._update_persona_graph(R_ego_t)
+        self._create_partitions()
+
+    def add_batch(self, batch):
+        """Add a new batch of edges to the original graph. And re-fit"""
+        R_ego = set()
+        for i, j in batch:
+            self.graph.add_edge(i, j)
+        for i, j in batch:
+            R_ego.add(i)
+            R_ego.add(j)
+            # TODO: Use intersection of i's and j's egonets instead of neighbors
+            # here..
+            common = set(self.graph.neighbors(i)).intersection(self.graph.neighbors(j))
+            for w in common:
+                R_ego.add(w)
+                #... 
+        #self.fit(R_ego_t = R_ego, index = self.index)
+        self._update(R_ego_t = R_ego)
+
+    def stream_insert_edge(self, edge):
+        """ Insert edge (x, y) to the original graph and re-fit the graph """
+        i, j = edge[0], edge[1]
+        self.graph.add_edge(i, j)
+        R_ego = set()
+        R_ego.add(i)
+        R_ego.add(j)
+        # TODO: Use intersection of i's and j's egonets instead of neighbors
+        # here..
+        common = set(self.graph.neighbors(i)).intersection(self.graph.neighbors(j))
+        for w in common:
+            R_ego.add(w)
+        self._update(R_ego)
+
+    def stream_add_batch(self, batch):
+        for edge in batch:
+            self.stream_insert_edge(edge)
+
     def kpjim_ego(self):
         print("Hello kpjim's ego")

@@ -8,4 +8,7 @@ from .src.ego_splitter import(
 )
 
 __version__ = "0.1"
-__autor__ = """Benedek Rozemberczki (https://github.com/benedekrozemberczki)"""
+__autor__ = """
+Benedek Rozemberczki (https://github.com/benedekrozemberczki)
+Konstantinos Papadimitriou (https://github.com/kpjim) ~ adding dynamic graph support
+"""
