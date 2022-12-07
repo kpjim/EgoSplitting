@@ -9,6 +9,7 @@ sys.path.insert(0, t)
 import community
 import networkx as nx
 from tqdm import tqdm
+import time
 
 
 class EgoNetSplitter(object):
@@ -112,8 +113,12 @@ class EgoNetSplitter(object):
         print("Clustering the persona graph.")
         self.partitions = community.best_partition(self.persona_graph, resolution=self.resolution)
         self.overlapping_partitions = {node: [] for node in self.graph.nodes()}
+        self.final_partitions = dict()
         for node, membership in self.partitions.items():
             self.overlapping_partitions[self.personality_map[node]].append(membership)
+            if membership not in self.final_partitions:
+                self.final_partitions[membership] = set()
+            self.final_partitions[membership].add(self.personality_map[node])
 
     def fit(self, graph):
         """
@@ -123,10 +128,13 @@ class EgoNetSplitter(object):
             * **graph** *(NetworkX graph)* - The graph to be clustered.
         """
         self.graph = graph
+        start = time.time()
         self._create_egonets()
         self._map_personalities()
         self._create_persona_graph()
+        end = time.time()
         self._create_partitions()
+        return end - start
 
     def get_memberships(self):
         r"""Getting the cluster membership of nodes.
@@ -135,16 +143,19 @@ class EgoNetSplitter(object):
         """
         return self.overlapping_partitions
 
+    def get_overlaps(self):
+        return self.final_partitions
+
     def _update(self, R_ego_t):
-        # print("kpjim start")
-        # print(self.personality_map)
-        print("START OF UPDATE")
+        start = time.time()
         self._create_egonets(R_ego_t = R_ego_t, update = 1)
         # We have already updated the personality map
         ## self._map_personalities()
         ## self._create_persona_graph()
         self._update_persona_graph(R_ego_t)
+        end = time.time()
         self._create_partitions()
+        return end - start
 
     def add_batch(self, batch):
         """Add a new batch of edges to the original graph. And re-fit"""
@@ -161,7 +172,7 @@ class EgoNetSplitter(object):
                 R_ego.add(w)
                 #... 
         #self.fit(R_ego_t = R_ego, index = self.index)
-        self._update(R_ego_t = R_ego)
+        return self._update(R_ego_t = R_ego)
 
     def stream_insert_edge(self, edge):
         """ Insert edge (x, y) to the original graph and re-fit the graph """
